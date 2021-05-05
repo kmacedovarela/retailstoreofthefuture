@@ -1,0 +1,39 @@
+package tracker;
+
+import com.demo.retailstoreofthefuture.model.TrackedCustomer;
+import com.demo.retailstoreofthefuture.model.Department;
+import com.demo.retailstoreofthefuture.model.Customer;
+dialect "java"
+
+declare CustomerMoveEvent
+    @role ( event )
+end
+
+rule "Detects a new customer in a department for the first time"
+  when
+    customer: TrackedCustomer($customerId : customerId, $departmentName : department.departmentName)
+    not Customer(customerId == $customerId,  departmentName == $departmentName )
+  then
+    insert(new Customer( $customerId, $departmentName, 0));
+    System.out.println("RULES EXECUTION: New customerId "+ $customerId+" in "+$departmentName);
+end
+
+rule "Detects a customer visited the same department"
+  no-loop
+  when
+    TrackedCustomer($customerId : customerId, $departmentName : department.departmentName)
+    customer: Customer(customerId == $customerId, departmentName == $departmentName )
+  then
+//    insert(new Customer( $customerId, $departmentName, 0));
+    modify(customer){setDepartmentVisitCount(customer.getDepartmentVisitCount()+1)}
+    System.out.println("RULES EXECUTION: Same customerId "+ $customerId+ "identified in "+$departmentName+", "+customer.getDepartmentVisitCount()+ " times." );
+end
+
+rule "Detects a focused customer who visited the same department three, or six or more times"
+  when
+    focusedCustomer: Customer( departmentVisitCount = 3 || departmentVisitCount >= 6) 
+  then
+    // insert(new FocusedCustomer( $customerId, $departmentName, ));
+    // modify(customer){setDepartmentVisitCount(customer.getDepartmentVisitCount()+1)}
+    System.out.println("RULES EXECUTION: Focused customerId "+ focusedCustomer.getCustomerId()+ "identified in "+ focusedCustomer.getDepartmentName());
+end

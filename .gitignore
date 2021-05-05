@@ -41,3 +41,9 @@ hs_err_pid*
 
 *.priv.*
 *.priv
+
+
+**/target
+**/.settings
+**/.factorypath
+**/.project
