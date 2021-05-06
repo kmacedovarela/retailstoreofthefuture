@@ -24,16 +24,16 @@ rule "Detects a customer visited the same department"
     TrackedCustomer($customerId : customerId, $departmentName : department.departmentName)
     customer: Customer(customerId == $customerId, departmentName == $departmentName )
   then
-//    insert(new Customer( $customerId, $departmentName, 0));
     modify(customer){setDepartmentVisitCount(customer.getDepartmentVisitCount()+1)}
     System.out.println("RULES EXECUTION: Same customerId "+ $customerId+ "identified in "+$departmentName+", "+customer.getDepartmentVisitCount()+ " times." );
 end
 
 rule "Detects a focused customer who visited the same department three, or six or more times"
   when
-    focusedCustomer: Customer( departmentVisitCount = 3 || departmentVisitCount >= 6) 
+    focusedCustomer: Customer( departmentVisitCount == 3) 
   then
     // insert(new FocusedCustomer( $customerId, $departmentName, ));
     // modify(customer){setDepartmentVisitCount(customer.getDepartmentVisitCount()+1)}
+    // Emit MQTT
     System.out.println("RULES EXECUTION: Focused customerId "+ focusedCustomer.getCustomerId()+ "identified in "+ focusedCustomer.getDepartmentName());
 end
