@@ -11,6 +11,12 @@ public class CustomerMovementEvent {
     private int x;
     private int y;
 	
+	public CustomerMovementEvent(String customerId, Point location, long timestamp) {
+		this.id = customerId;
+		this.location = location;
+		this.timestamp = timestamp;
+	}
+
 	public CustomerMovementEvent(String customerId, Point location) {
 		this.id = customerId;
 		this.location = location;

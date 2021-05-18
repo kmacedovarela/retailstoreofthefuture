@@ -4,6 +4,7 @@ import com.demo.retailstoreofthefuture.configuration.settings.MqttSettings;
 import com.demo.retailstoreofthefuture.handlers.IncomingMessageHandler;
 
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -32,24 +33,34 @@ import org.springframework.messaging.MessageHandler;
 public class Application {
 
     IncomingMessageHandler messageHandler;
+    public static ConfigurableApplicationContext context;
 
     public static void main(String[] args) {
         //SpringApplication.run(Application.class, args);
-        ConfigurableApplicationContext context =
-                new SpringApplicationBuilder(Application.class).run(args);
+        context = new SpringApplicationBuilder(Application.class).run(args);
         RulesExecutor.setupKIEContainer();
     }
 
     @Bean
     public IntegrationFlow mqttInbound(MqttSettings settings,
                                        MqttPahoClientFactory mqttClientFactory) {
-        messageHandler = new IncomingMessageHandler(); // Injection is not working as expected.
+        IncomingMessageHandler messageHandler = new IncomingMessageHandler(); // Injection is not working as expected.
         return IntegrationFlows.from(
                 new MqttPahoMessageDrivenChannelAdapter("mqtt-service", mqttClientFactory, settings.getTopic()))
                 .handle(messageHandler)
                 .get();
     }
-    
+
+    @Bean
+    @ServiceActivator(inputChannel = "mqttOutboundChannel")
+    public MessageHandler mqttOutbound(MqttSettings settings) {
+        MqttPahoMessageHandler messageHandler =
+                       new MqttPahoMessageHandler("customer-tracker-client", mqttClientFactory(settings));
+        messageHandler.setAsync(true);
+        messageHandler.setDefaultTopic("focused-customer");
+        return messageHandler;
+    }
+
     @Bean
     public MqttPahoClientFactory mqttClientFactory(MqttSettings settings) {
         MqttConnectOptions options = new MqttConnectOptions();
@@ -67,25 +78,16 @@ public class Application {
         factory.setConnectionOptions(options);
 
         return factory;
-    }
+    }    
 
-    @Bean
-    @ServiceActivator(inputChannel = "mqttOutboundChannel")
-    public MessageHandler mqttOutbound(MqttSettings settings) {
-        MqttPahoMessageHandler messageHandler =
-                       new MqttPahoMessageHandler("customer-tracker-client", mqttClientFactory(settings));
-        messageHandler.setAsync(true);
-        messageHandler.setDefaultTopic(settings.getTopic());
-        return messageHandler;
-    }
+    // @Bean
+    // public MessageChannel mqttOutboundChannel() {
+    //     return new DirectChannel();
+    // }
 
-    @Bean
-    public MessageChannel mqttOutboundChannel() {
-        return new DirectChannel();
-    }
+    // @MessagingGateway(defaultRequestChannel = "mqttOutboundChannel")
+    // public interface MyGateway {
+    //     void sendToMqtt(String data);
+    // }
 
-    @MessagingGateway(defaultRequestChannel = "mqttOutboundChannel")
-    public interface MyGateway {
-        void sendToMqtt(String data);
-    }
 }

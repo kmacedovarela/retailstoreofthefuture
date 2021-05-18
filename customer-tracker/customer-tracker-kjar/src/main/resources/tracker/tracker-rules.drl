@@ -3,37 +3,120 @@ package tracker;
 import com.demo.retailstoreofthefuture.model.TrackedCustomer;
 import com.demo.retailstoreofthefuture.model.Department;
 import com.demo.retailstoreofthefuture.model.Customer;
-dialect "java"
+dialect "mvel"
 
-declare CustomerMoveEvent
+global java.util.List customerListResult
+
+declare TrackedCustomer
     @role ( event )
+    @timestamp( moveTimestamp )
 end
 
 rule "Detects a new customer in a department for the first time"
+  lock-on-active true
+  salience 10
   when
-    customer: TrackedCustomer($customerId : customerId, $departmentName : department.departmentName)
-    not Customer(customerId == $customerId,  departmentName == $departmentName )
+    $customerEvent: Customer()
+    not TrackedCustomer(customerId == $customerEvent.customerId)
   then
-    insert(new Customer( $customerId, $departmentName, 0));
-    System.out.println("RULES EXECUTION: New customerId "+ $customerId+" in "+$departmentName);
+    $trackedCustomer = new TrackedCustomer($customerEvent.getCustomerId())
+                            .moveTimestamp($customerEvent.getTimestamp())
+                            .location( $customerEvent.getLocation())
+                            .departmentName($customerEvent.getDepartmentName())
+                            .lastVisitedDepartment($customerEvent.getDepartmentName())
+                            .sameDepartmentVisitCount(0)
+                            .departmentVisitCount(1);
+
+    System.out.println("RULES EXECUTION: New trackedCustomerId "+ $trackedCustomer.getCustomerId()+" in "+ $trackedCustomer.getDepartmentName()+" at: "+$customerEvent.getTimestamp());
+    
+    insert($trackedCustomer)
 end
 
-rule "Detects a customer visited the same department"
+rule "Monitor tracked customers navigating in the store"
+  no-loop
+  lock-on-active true
+  salience 9
+  when
+    $customerEvent: Customer($customerId: customerId)
+    $trackedCustomer: TrackedCustomer(customerId == $customerId)
+    //TODO: add timestamp validation
+  then
+    modify($trackedCustomer){
+      setLastVisitedDepartment($trackedCustomer.getDepartmentName()),
+      setDepartmentName($customerEvent.getDepartmentName)
+    }
+
+    System.out.println("RULES EXECUTION: Existing customerId ["+$trackedCustomer.getCustomerId()+"] identified in ["+ $trackedCustomer.getDepartmentName()+ "]"); 
+end
+
+rule "Identify tracked customers visiting the same department" 
+  salience 8
+  no-loop
+  lock-on-active true
+  when
+    $trackedCustomer: TrackedCustomer(departmentName == lastVisitedDepartment)
+    $customer: Customer(customerId == $trackedCustomer.customerId)
+    //TODO: add timestamp validation
+  then
+    modify($trackedCustomer){
+      setSameDepartmentVisitCount($trackedCustomer.getSameDepartmentVisitCount()+1),
+      setDepartmentVisitCount(1)
+    }
+
+    System.out.println("RULES EXECUTION: Customer ["+$trackedCustomer.getCustomerId()+"] visited ["+ $trackedCustomer.getDepartmentName()+ "] ["+$trackedCustomer.getSameDepartmentVisitCount()+"] times in sequence"); 
+end
+
+rule "Identify tracked customers browsing across different departments"
+  salience 8
   no-loop
   when
-    TrackedCustomer($customerId : customerId, $departmentName : department.departmentName)
-    customer: Customer(customerId == $customerId, departmentName == $departmentName )
+    $trackedCustomer: TrackedCustomer(departmentName != lastVisitedDepartment)
+    //TODO: add timestamp validation
   then
-    modify(customer){setDepartmentVisitCount(customer.getDepartmentVisitCount()+1)}
-    System.out.println("RULES EXECUTION: Same customerId "+ $customerId+ "identified in "+$departmentName+", "+customer.getDepartmentVisitCount()+ " times." );
+    modify($trackedCustomer){
+      setSameDepartmentVisitCount(1),
+      setDepartmentVisitCount($trackedCustomer.getDepartmentVisitCount()+1)
+    }
+
+    System.out.println("RULES EXECUTION: Customer ["+$trackedCustomer.getCustomerId()+"] visited ["+ $trackedCustomer.getDepartmentName()+ "] ["+$trackedCustomer.getSameDepartmentVisitCount()+"] and is browsing ["+$trackedCustomer.getDepartmentVisitCount()+"] times across different departments"); 
 end
 
-rule "Detects a focused customer who visited the same department three, or six or more times"
+rule "Identify focused customers" 
+  salience 7
+  no-loop
   when
-    focusedCustomer: Customer( departmentVisitCount == 3) 
+    $trackedCustomer: TrackedCustomer(sameDepartmentVisitCount >= 3)
+    //TODO: add timestamp validation
   then
-    // insert(new FocusedCustomer( $customerId, $departmentName, ));
-    // modify(customer){setDepartmentVisitCount(customer.getDepartmentVisitCount()+1)}
-    // Emit MQTT
-    System.out.println("RULES EXECUTION: Focused customerId "+ focusedCustomer.getCustomerId()+ "identified in "+ focusedCustomer.getDepartmentName());
+    $trackedCustomer.setDepartmentVisitCount(1);
+    $trackedCustomer.setIsFocused(true);
+
+    customerListResult.add($trackedCustomer);
+    System.out.println("RULES EXECUTION: Focused Customer ["+$trackedCustomer.getCustomerId()+"] at ["+ $trackedCustomer.getDepartmentName()+ "], ["+$trackedCustomer.getSameDepartmentVisitCount()+"] times"); 
 end
+
+rule "Identify browsing customers" 
+  salience 7
+  no-loop
+  when
+    $trackedCustomer: TrackedCustomer(departmentVisitCount >= 3) 
+    //TODO: add timestamp validation
+  then
+    $trackedCustomer.setDepartmentVisitCount($trackedCustomer.getDepartmentVisitCount()+1);
+    $trackedCustomer.setIsBrowsing(true);
+
+    customerListResult.add($trackedCustomer);
+    System.out.println("RULES EXECUTION: Browsing Customer ["+$trackedCustomer.getCustomerId()+"] moved through ["+$trackedCustomer.getDepartmentVisitCount()+"] different departments already"); 
+end
+
+// rule "Detect customer in same department in the last 2 minutes"
+//   no-loop
+//   when
+//     $trackedCustomer: TrackedCustomer()
+//     List( size >= 3 ) from collect (
+//       TrackedCustomer( customerId == $trackedCustomer.customerId, departmentName == $trackedCustomer.departmentName )
+//       over window:time(5m))
+//   then
+//    focusedCustomers.put($trackedCustomer.customerId,$trackedCustomer);
+//    System.out.println("RULES EXECUTION: Existing customerId ["+$trackedCustomer.getCustomerId()+"] identified in ["+ $trackedCustomer.getDepartmentName()+ "] 3+ times"); 
+// end
